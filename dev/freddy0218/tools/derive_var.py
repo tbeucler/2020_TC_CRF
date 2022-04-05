@@ -3,7 +3,53 @@ from metpy.units import units
 from metpy.calc import potential_temperature
 import numpy as np
 from tqdm import tqdm
+from tools import read_and_proc
 
+##############################################################################################################
+# Numerical
+##############################################################################################################
+def backward_secondorder(arrayin=None,delta=None,axis=None):
+    result = []
+    if axis==0:
+        result.append((arrayin[1]-arrayin[0])/3600)
+        for i in range(2,arrayin.shape[axis]):
+            temp = (3*arrayin[i,:]-4*arrayin[i-1,:]+arrayin[i-2,:])/(2*delta)
+            result.append(temp)
+        return np.asarray(result)
+    elif axis==1:
+        result.append((arrayin[:,1,:]-arrayin[:,0,:])/3600)
+        for i in range(2,arrayin.shape[axis]):
+            temp = (3*arrayin[:,i,:]-4*arrayin[:,i-1,:]+arrayin[:,i-2,:])/(2*delta)
+            result.append(temp)
+        return np.asarray(result)   
+    elif axis==2:
+        result.append((arrayin[:,:,1,:]-arrayin[:,:,0,:])/3600)
+        for i in range(2,arrayin.shape[axis]):
+            temp = (3*arrayin[:,:,i,:]-4*arrayin[:,:,i-1,:]+arrayin[:,:,i-2,:])/(2*delta)
+            result.append(temp)
+        return np.asarray(result)
+    elif axis==3:
+        result.append((arrayin[:,:,:,1]-arrayin[:,:,:,0])/3600)
+        for i in range(2,arrayin.shape[axis]):
+            temp = (3*arrayin[:,:,:,i]-4*arrayin[:,:,:,i-1]+arrayin[:,:,:,i-2])/(2*delta)
+            result.append(temp)
+        return np.asarray(result)
+
+def forward_diff(arrayin=None,delta=None,axis=None,LT=1):
+    result = []
+    if axis==0:
+        for i in range(0,arrayin.shape[axis]-LT):
+            temp = (arrayin[i+LT,:]-arrayin[i,:])/(LT*delta)
+            result.append(temp)
+        return np.asarray(result)
+    
+def nearest_index(array, value):
+    idx = (np.abs(array-value)).argmin()
+    return idx.values
+    
+##############################################################################################################
+# Theta
+##############################################################################################################
 def do_theta(var=None,presaxis=None): #ctrlvar_dict['T']['T']
 		"""
 		var: Temperature in Kelvin
@@ -11,23 +57,55 @@ def do_theta(var=None,presaxis=None): #ctrlvar_dict['T']['T']
 		"""
 		theta_out = []
 		pres3d = np.tile(presaxis.data[:, np.newaxis, np.newaxis], (39,var[0,0].shape[0],var[0,0].shape[1]))
-		for i in tqdm(range(39)):
+		for i in (range(len(presaxis))):
 				temppres = pres3d[i,:,:]
 				temp_T = var[:,i,:,:].data
 				
 				theta = np.asarray([potential_temperature(units.Quantity(temppres,'hPa'),units.Quantity(temp_T[indexin,:,:],'K')) for indexin in range(temp_T.shape[0])])
 				theta_out.append(theta)
 		return theta_out
+    
+def output_dtheta(uvtpath=None,originpath=None,expname=None,sigma=[3,0,0,0],addsenmethod='new'):
+    theta = gaussian_filter(np.swapaxes(np.asarray(read_and_proc.depickle(uvtpath+str(expname)+'/theta')),0,1),sigma=sigma)
+    ###############################################################################################
+    # dtheta
+    ###############################################################################################
+    if expname=='ctl':
+        dtheta = forward_diff(gaussian_filter(theta,sigma=sigma),60*60,0)
+    elif (expname=='ncrf_36h') or (expname=='lwcrf'):
+        ctrl_thetaA = gaussian_filter(np.swapaxes(np.asarray(read_and_proc.depickle(uvtpath+'/ctl/theta')),0,1),sigma=sigma)
+        if addsenmethod=='orig':
+            thetaL = read_and_proc.add_ctrl_before_senstart(ctrl_thetaA,theta,'NCRF36','Yes')
+        elif addsenmethod=='new':
+            thetaL = read_and_proc.add_ctrl_before_senstart_ctrlbase(ctrl_thetaA,theta,'NCRF36','Yes')
+        dtheta = forward_diff(thetaL,60*60,0)
+        del ctrl_thetaA,thetaL
+        gc.collect()
+    elif (expname=='ncrf_60h'):
+        ctrl_thetaA = gaussian_filter(np.swapaxes(np.asarray(read_and_proc.depickle(uvtpath+'/ctl/theta')),0,1),sigma=sigma)
+        if addsenmethod=='orig':
+            thetaL = read_and_proc.add_ctrl_before_senstart(ctrl_thetaA,theta,'NCRF60','Yes')
+        elif addsenmethod=='new':
+            thetaL = read_and_proc.add_ctrl_before_senstart_ctrlbase(ctrl_thetaA,theta,'NCRF60','Yes')
+        dtheta = forward_diff(thetaL,60*60,0)
+        del ctrl_thetaA,thetaL
+        gc.collect()
+    del theta
+    gc.collect()
+    return dtheta
 
-def ruppert_vtmax_calc(dataU=None,dataV=None,outer_limit=None,azimuth_in=None,simulation=None):
+##############################################################################################################
+# urad/vtan
+##############################################################################################################
+def ruppert_vtmax_calc(dataU=None,dataV=None,outer_limit=None,azimuth_in=None,simulation=None,r500=None):
 		d2r = np.pi/180
 		Uradout,Vtanout,Vtanmaxout = [],[],[]
 		if len(dataU.shape)==4:
 				try:  az = dataU[:,0,:,:].azmiuth.values
 				except: az=azimuth_in
 				
-				azt = np.moveaxis(np.tile(az,(dataU[:,0,:,:].shape[0],1,167,1)),-1,-2)[:,0,:,:]
-				for heightindices in tqdm(range(dataU.shape[1])):
+				azt = np.moveaxis(np.tile(az,(dataU[:,0,:,:].shape[0],1,outer_limit,1)),-1,-2)[:,0,:,:]
+				for heightindices in (range(dataU.shape[1])):
 						try:
 								wdir = (np.arctan(dataV[:,heightindices,:,:outer_limit]/dataU[:,heightindices,:,:outer_limit])/d2r)
 						except:
@@ -62,33 +140,6 @@ def ruppert_vtmax_calc(dataU=None,dataV=None,outer_limit=None,azimuth_in=None,si
 				Vtan = wspd*np.sin((wdir-azt)*d2r)
 				Vtan_max = np.max(np.mean(Vtan[:,:,:outer_limit],axis=1),axis=1)		
 				return Urad,Vtan,Vtan_max
-
-def backward_secondorder(arrayin=None,delta=None,axis=None):
-		result = []
-		if axis==0:
-				result.append((arrayin[1]-arrayin[0])/3600)
-				for i in range(2,arrayin.shape[axis]):
-						temp = (3*arrayin[i,:]-4*arrayin[i-1,:]+arrayin[i-2,:])/(2*delta)
-						result.append(temp)
-				return np.asarray(result)
-		elif axis==1:
-				result.append((arrayin[:,1,:]-arrayin[:,0,:])/3600)
-				for i in range(2,arrayin.shape[axis]):
-						temp = (3*arrayin[:,i,:]-4*arrayin[:,i-1,:]+arrayin[:,i-2,:])/(2*delta)
-						result.append(temp)
-				return np.asarray(result)   
-		elif axis==2:
-				result.append((arrayin[:,:,1,:]-arrayin[:,:,0,:])/3600)
-				for i in range(2,arrayin.shape[axis]):
-						temp = (3*arrayin[:,:,i,:]-4*arrayin[:,:,i-1,:]+arrayin[:,:,i-2,:])/(2*delta)
-						result.append(temp)
-				return np.asarray(result)
-		elif axis==3:
-				result.append((arrayin[:,:,:,1]-arrayin[:,:,:,0])/3600)
-				for i in range(2,arrayin.shape[axis]):
-						temp = (3*arrayin[:,:,:,i]-4*arrayin[:,:,:,i-1]+arrayin[:,:,:,i-2])/(2*delta)
-						result.append(temp)
-				return np.asarray(result)
 
 from scipy.ndimage import gaussian_filter
 import gc
