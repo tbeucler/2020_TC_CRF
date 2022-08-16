@@ -41,7 +41,7 @@ def forward_diff(arrayin=None,delta=None,axis=None,LT=1):
         for i in range(0,arrayin.shape[axis]-LT):
             temp = (arrayin[i+LT,:]-arrayin[i,:])/(LT*delta)
             result.append(temp)
-        return np.asarray(result)
+            return np.asarray(result)
     
 def nearest_index(array, value):
     idx = (np.abs(array-value)).argmin()
@@ -51,19 +51,21 @@ def nearest_index(array, value):
 # Theta
 ##############################################################################################################
 def do_theta(var=None,presaxis=None): #ctrlvar_dict['T']['T']
-		"""
-		var: Temperature in Kelvin
-		presaxis: 1D pressure axis in hPa
-		"""
-		theta_out = []
-		pres3d = np.tile(presaxis.data[:, np.newaxis, np.newaxis], (39,var[0,0].shape[0],var[0,0].shape[1]))
-		for i in (range(len(presaxis))):
-				temppres = pres3d[i,:,:]
-				temp_T = var[:,i,:,:].data
-				
-				theta = np.asarray([potential_temperature(units.Quantity(temppres,'hPa'),units.Quantity(temp_T[indexin,:,:],'K')) for indexin in range(temp_T.shape[0])])
-				theta_out.append(theta)
-		return theta_out
+    """
+    var: Temperature in Kelvin
+    presaxis: 1D pressure axis in hPa
+    """
+    theta_out = []
+    try:
+        pres3d = np.tile(presaxis.data[:, np.newaxis, np.newaxis], (39,var[0,0].shape[0],var[0,0].shape[1]))
+    except:
+        pres3d = np.tile(np.asarray(presaxis)[:, np.newaxis, np.newaxis], (39,var[0,0].shape[0],var[0,0].shape[1]))            
+    for i in (range(len(presaxis))):
+        temppres = pres3d[i,:,:]
+        temp_T = var[:,i,:,:].data
+        theta = np.asarray([potential_temperature(units.Quantity(temppres,'hPa'),units.Quantity(temp_T[indexin,:,:],'K')) for indexin in range(temp_T.shape[0])])
+        theta_out.append(theta)
+    return theta_out
     
 def output_dtheta(uvtpath=None,originpath=None,expname=None,sigma=[3,0,0,0],addsenmethod='new'):
     theta = gaussian_filter(np.swapaxes(np.asarray(read_and_proc.depickle(uvtpath+str(expname)+'/theta')),0,1),sigma=sigma)
@@ -98,73 +100,71 @@ def output_dtheta(uvtpath=None,originpath=None,expname=None,sigma=[3,0,0,0],adds
 # urad/vtan
 ##############################################################################################################
 def ruppert_vtmax_calc(dataU=None,dataV=None,outer_limit=None,azimuth_in=None,simulation=None,r500=None):
-		d2r = np.pi/180
-		Uradout,Vtanout,Vtanmaxout = [],[],[]
-		if len(dataU.shape)==4:
-				try:  az = dataU[:,0,:,:].azmiuth.values
-				except: az=azimuth_in
-				
-				azt = np.moveaxis(np.tile(az,(dataU[:,0,:,:].shape[0],1,outer_limit,1)),-1,-2)[:,0,:,:]
-				for heightindices in (range(dataU.shape[1])):
-						try:
-								wdir = (np.arctan(dataV[:,heightindices,:,:outer_limit]/dataU[:,heightindices,:,:outer_limit])/d2r)
-						except:
-								print('Cannot find wind field arrays!')
-						loc_neg = (dataU[:,heightindices,:,:outer_limit]<0)
-						wdir[loc_neg] += 180
-						wspd = np.sqrt(dataU[:,heightindices,:,:outer_limit]**2+dataV[:,heightindices,:,:outer_limit]**2)
-						Urad = wspd*np.cos((wdir-azt)*d2r)
-						Vtan = wspd*np.sin((wdir-azt)*d2r)
-						Vtan_max = np.max(np.mean(Vtan[:,:,:outer_limit],axis=1),axis=1)
-						del loc_neg,wspd,wdir
-						
-						##################################################################
-						# Populate Empty Lists
-						Uradout.append(Urad)
-						Vtanout.append(Vtan)
-						Vtanmaxout.append(Vtan_max)
-						del Urad,Vtan
-				return (Uradout),(Vtanout),Vtanmaxout    
-						
-		elif len(dataU.shape)==3:
-				try:
-						wdir = (np.arctan(dataV[:,:,:outer_limit]/dataU[:,:,:outer_limit])/d2r).values	
-				except:
-						print('Cannot find wind field arrays!')
-				loc_neg = (dataU<0)
-				wdir[loc_neg] += 180
-				wspd = np.sqrt(dataU[:,heightindices,:,:outer_limit]**2+dataV[:,heightindices,:,:outer_limit]**2).values
-				az = dataU.azmiuth.values
-				azt = np.moveaxis(np.tile(az,(dataU.shape[0],1,167,1)),-1,-2)[:,0,:,:]
-				Urad = wspd*np.cos((wdir-azt)*d2r)
-				Vtan = wspd*np.sin((wdir-azt)*d2r)
-				Vtan_max = np.max(np.mean(Vtan[:,:,:outer_limit],axis=1),axis=1)		
-				return Urad,Vtan,Vtan_max
+    d2r = np.pi/180
+    Uradout,Vtanout,Vtanmaxout = [],[],[]
+    if len(dataU.shape)==4:
+        try:  az = dataU[:,0,:,:].azmiuth.values
+        except: az=azimuth_in
+        
+        azt = np.moveaxis(np.tile(az,(dataU[:,0,:,:].shape[0],1,outer_limit,1)),-1,-2)[:,0,:,:]
+        for heightindices in (range(39)):
+            try:
+                wdir = (np.arctan(dataV[:,heightindices,:,:outer_limit]/dataU[:,heightindices,:,:outer_limit])/d2r)
+            except:
+                print('Cannot find wind field arrays!')
+            loc_neg = (dataU[:,heightindices,:,:outer_limit]<0)
+            wdir[loc_neg] += 180
+            wspd = np.sqrt(dataU[:,heightindices,:,:outer_limit]**2+dataV[:,heightindices,:,:outer_limit]**2)
+            Urad = wspd*np.cos((wdir-azt)*d2r)
+            Vtan = wspd*np.sin((wdir-azt)*d2r)
+            Vtan_max = np.max(np.mean(Vtan[:,:,:outer_limit],axis=1),axis=1)
+            del loc_neg,wspd,wdir
+            ##################################################################
+            # Populate Empty Lists
+            Uradout.append(Urad)
+            Vtanout.append(Vtan)
+            Vtanmaxout.append(Vtan_max)
+        del Urad,Vtan
+        return (Uradout),(Vtanout),Vtanmaxout    
+    elif len(dataU.shape)==3:
+        try:
+            wdir = (np.arctan(dataV[:,:,:outer_limit]/dataU[:,:,:outer_limit])/d2r).values	
+        except:
+            print('Cannot find wind field arrays!')
+        loc_neg = (dataU<0)
+        wdir[loc_neg] += 180
+        wspd = np.sqrt(dataU[:,heightindices,:,:outer_limit]**2+dataV[:,heightindices,:,:outer_limit]**2).values
+        az = dataU.azmiuth.values
+        azt = np.moveaxis(np.tile(az,(dataU.shape[0],1,167,1)),-1,-2)[:,0,:,:]
+        Urad = wspd*np.cos((wdir-azt)*d2r)
+        Vtan = wspd*np.sin((wdir-azt)*d2r)
+        Vtan_max = np.max(np.mean(Vtan[:,:,:outer_limit],axis=1),axis=1)		
+        return Urad,Vtan,Vtan_max
 
 from scipy.ndimage import gaussian_filter
 import gc
 def do_gauss_smooth(var=None,gaussian=[3,0,0]):
-		normal_var = []
-		for presindex in range(len(var[0,:,0,0])):
-				normal_var.append(gaussian_filter((var[:,presindex,:,:]),sigma=gaussian))
-		normal_var = np.swapaxes(np.asarray(normal_var),0,1)
-		print("Finished!")
-		return normal_var
+    normal_var = []
+    for presindex in range(len(var[0,:,0,0])):
+        normal_var.append(gaussian_filter((var[:,presindex,:,:]),sigma=gaussian))
+    normal_var = np.swapaxes(np.asarray(normal_var),0,1)
+    print("Finished!")
+    return normal_var
 
 def windrates_real(u=None,v=None,w=None,LT=None):
-		# dudt
-		dudtT = [forward_diff(uobj,60*60,0,LT) for uobj in u]
-		#print([obj.shape[0] for obj in dudtT])
-		dudt = np.concatenate((dudtT[0],dudtT[1][(36-23):],dudtT[2][(60-23):],dudtT[3][(36-23):]),axis=0)
-		del dudtT
-		gc.collect()
-		# dvdt
-		dvdtT = [forward_diff(vobj,60*60,0,LT) for vobj in v]
-		dvdt = np.concatenate((dvdtT[0],dvdtT[1][(36-23):],dvdtT[2][(60-23):],dvdtT[3][(36-23):]),axis=0)
-		del dvdtT 
-		gc.collect()
-		# dwdt
-		dwdtT = [forward_diff(wobj,60*60,0,LT) for wobj in w]
-		dwdt = np.concatenate((dwdtT[0],dwdtT[1][(36-23):],dwdtT[2][(60-23):],dwdtT[3][(36-23):]),axis=0)
-		del dwdtT 
-		return dudt,dvdt,dwdt
+    # dudt
+    dudtT = [forward_diff(uobj,60*60,0,LT) for uobj in u]
+    #print([obj.shape[0] for obj in dudtT])
+    dudt = np.concatenate((dudtT[0],dudtT[1][(36-23):],dudtT[2][(60-23):],dudtT[3][(36-23):]),axis=0)
+    del dudtT
+    gc.collect()
+    # dvdt
+    dvdtT = [forward_diff(vobj,60*60,0,LT) for vobj in v]
+    dvdt = np.concatenate((dvdtT[0],dvdtT[1][(36-23):],dvdtT[2][(60-23):],dvdtT[3][(36-23):]),axis=0)
+    del dvdtT 
+    gc.collect()
+    # dwdt
+    dwdtT = [forward_diff(wobj,60*60,0,LT) for wobj in w]
+    dwdt = np.concatenate((dwdtT[0],dwdtT[1][(36-23):],dwdtT[2][(60-23):],dwdtT[3][(36-23):]),axis=0)
+    del dwdtT 
+    return dudt,dvdt,dwdt

@@ -22,8 +22,8 @@ class do_PCA:
         print('Complete')
         return skpcaVAR
         
-    def do_ctl_PCA(self,folderpath=None):
-        listdict = [read_and_proc.depickle(folderpath+str(self.expname[i])+'_'+'preproc_dict1') for i in range(len(self.expname))]
+    def do_ctl_PCA(self,folderpath=None,suffix=None):
+        listdict = [read_and_proc.depickle(folderpath+str(self.expname[i])+'_'+suffix) for i in range(len(self.expname))]
         ctl_var = [listdict[0][strvar][self.timezoom[0]:self.timezoom[1]] for strvar in self.varname]
         
         PCAska = {}

@@ -1,6 +1,19 @@
 import numpy as np
 import gc
+from tqdm.auto import tqdm
 from tools import read_and_proc
+
+def long_MariaExps(array=None):
+    haiyan_temparray = [array[0][12:,:],array[1][36:,:],array[2][60:,:],array[3][96:,:],array[4][36:,:]]
+    del array
+    gc.collect()
+    return np.concatenate(haiyan_temparray,axis=0),[obj.shape for obj in haiyan_temparray]
+
+def to_azim(array=None,shape=[39,360,200]):
+    def _to_azim(array=None):
+        arrayn = array.reshape(array.shape[0],shape[0],shape[1],shape[2])
+        return np.nanmean(arrayn,axis=2).reshape(array.shape[0],shape[0]*shape[2])
+    return [_to_azim(obj) for obj in array]
 
 def flatten(t):
     #https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-a-list-of-lists
@@ -33,245 +46,162 @@ def myPCA_projection_sen(pca_dict=None,varname=None,toproj_flatvar=None,orig_fla
     pca_orig = pca_dict[varname].transform(orig_flatvar)
     if pca_dict[varname].mean_ is not None:
         orig_mean = pca_dict[varname].mean_
-    projvar_transformed = np.dot(toproj_flatvar-np.nanmean(orig_flatvar,axis=0),pca_dict[varname].components_.T)
+    projvar_transformed = np.dot(toproj_flatvar-np.nanmean(toproj_flatvar,axis=0),pca_dict[varname].components_.T)
     del orig_mean
     gc.collect()
     return pca_orig, projvar_transformed
-    
+
 class input_output:
     def __init__(self,PCAdict=None,folderpath=None,ts_varname=None,nummem=None):
         self.PCAdict = PCAdict
-        self.expname=['ctl','ncrf_36h','ncrf_60h','lwcrf']
+        self.varname=ts_varname
         self.nummem = nummem # u: 36 (40% variability in du), v:16/32 (40% dv var;50%), w:44 (40% dw var)
-        self.ts_varname = ts_varname
-    ###################################################################################################################################################
-    # Read var
-    ###################################################################################################################################################
-    def readvar(self,listdict=None,varname=['u','v','w','qv','heatsum'],withtheta='Yes',thetaflat=None,smooth24=False):
-        # Smooth24 or nosmooth
-        vardict = {}
-        if smooth24:
-            withtheta='No'
-            varname=['u','v','w','qv','theta','heatsum']
-        else:
-            withtheta='Yes'
-            varname=['u','v','w','qv','heatsum']
-        # Read array
-        for indx,obj in enumerate(self.expname):
-            if withtheta=='Yes':
-                templist = [listdict[indx][strvar][24:120] for strvar in varname]
-                theta = thetaflat[list(thetaflat.keys())[indx]][24:120]
-                heatsum = templist[4]
-                templist.pop(4)
-                templist.insert(4,theta)
-                templist.insert(5,heatsum)
-                assert len(templist)==6
-                vardict[obj] = templist
-            else:
-                vardict[obj] = [listdict[indx][strvar][24:120] for strvar in varname]
-        return vardict
-
-    def readvar_sen(self,listdict=None,varname=['u','v','w','qv','heatsum'],withtheta='Yes',thetaflat=None,heatcompflat=None):
-        vardict = {}
-        for indx,obj in enumerate(self.expname):
-            if withtheta=='Yes':
-                templist = [listdict[indx][strvar][24:120] for strvar in varname]
-                theta = thetaflat[list(thetaflat.keys())[indx]][24:120]
-                heatcomp = heatcompflat[list(heatcompflat.keys())[indx]][24:120]
-                heatsum = templist[4]
-                templist.pop(4)
-                templist.insert(4,theta)
-                templist.insert(5,heatsum)
-                templist.insert(6,heatcomp)
-                assert len(templist)==7
-                vardict[obj] = templist
-        return vardict
     
     ###################################################################################################################################################
     # Produce time series
     ###################################################################################################################################################    
     def produce_timeseries(self,flatvar=None):
         ts_dict = {}
-        for indx,obj in enumerate(self.ts_varname):
-            flatvarstemp = [flatvar[expNAME][indx] for expNAME in self.expname]
-            temp = [self.PCAdict[obj].transform(flatvartempTEMP)[:,0:self.nummem[indx]] for flatvartempTEMP in flatvarstemp]
-            del flatvarstemp
-            gc.collect()
-            ts_dict[obj] = temp
+        for indx,obj in tqdm(enumerate(self.varname)):
+            ts_dict[obj] = self.PCAdict[obj].transform(flatvar[obj].data)[:,0:self.nummem[indx]]
         return ts_dict
     
-    def produce_sentimeseries(self,flatvar=None):
+    def produce_Qsentimeseries(self,senvar_name=None,refvar_name='rad',numQ=None,flatvar=None,senflatvar=None):
         ts_dict = {}
-        for indx,obj in enumerate(self.ts_varname):
-            if obj != 'heatcomp':
-                flatvarstemp = [flatvar[expNAME][indx] for expNAME in self.expname]
-                temp = [self.PCAdict[obj].transform(flatvartempTEMP)[:,0:self.nummem[indx]] for flatvartempTEMP in flatvarstemp]
-                del flatvarstemp
-                gc.collect()
-                ts_dict[obj] = temp
-            else:
-                print(self.nummem[indx])
-                heatcomptemp = [flatvar[expNAME][indx] for expNAME in self.expname]
-                temp = [myPCA_projection_sen(pca_dict=self.PCAdict,varname='heatsum',toproj_flatvar=heatcomptemp[i],\
-                                             orig_flatvar=heatcomptemp[0])[1][:,0:self.nummem[indx]] for i in range(len(heatcomptemp))]
-                del heatcomptemp
-                gc.collect()
-                ts_dict[obj] = temp
+        temp = [myPCA_projection_sen(pca_dict=self.PCAdict,varname=refvar_name,toproj_flatvar=senflatvar[obj].data,orig_flatvar=flatvar[refvar_name].data)[1][:,0:numQ] for indx,obj in enumerate(senvar_name)]
+        return dict(zip(senvar_name,temp))
+    
+    def normalize_timeseries(self,timeseries=None):
+        #assert timeseries['u'].shape[-1]==50,"var shape error"
+        ts_dict = {}
+        for indx,obj in tqdm(enumerate(self.varname)):
+            ts_dict[obj] = (timeseries[obj]-np.nanmean(timeseries[obj],axis=0))/np.nanstd(timeseries[obj],axis=0)
         return ts_dict
     
-    ###################################################################################################################################################
-    # Normalization
-    ###################################################################################################################################################     
-    def normalize(self,ts=None,TYPE='meanstd'):
-        normalize_ts_dict = {}
-        for indx,obj in enumerate(self.ts_varname):
-            tstemp = [ts[obj][expINDEX] for expINDEX in range(len(self.expname))]
-            temp = [(tstemp[i]-np.nanmean(tstemp[0],axis=0))/np.nanstd(tstemp[0],axis=0) for i in range(len(tstemp))]
-            normalize_ts_dict[obj] = temp
-        return normalize_ts_dict
-    
-    def normalize_sen(self,ts=None):
-        normalize_ts_dict = {}
-        for indx,obj in enumerate(self.ts_varname):
-            if obj != 'heatsum':
-                tstemp = [ts[obj][expINDEX] for expINDEX in range(len(self.expname))]
-                temp = [(tstemp[i]-np.nanmean(tstemp[0],axis=0))/np.nanstd(tstemp[0],axis=0) for i in range(len(tstemp))]
-                normalize_ts_dict[obj] = temp
-            else:
-                tstemp = [ts['heatcomp'][expINDEX] for expINDEX in range(len(self.expname))]
-                tsbase = [ts['heatsum'][expINDEX] for expINDEX in range(len(self.expname))]
-                temp = [(tstemp[i]-np.nanmean(tsbase[0],axis=0))/np.nanstd(tsbase[0],axis=0) for i in range(len(tstemp))]
-                normalize_ts_dict[obj] = temp                
-        return normalize_ts_dict
+    def normalize_timeseries_decomp(self,sentimeseries=None,reftimeseries=None,senvarnames=None,refvarname='rad'):
+        ts_dict = {}
+        meanstd_dict = {}
+        for indx,obj in tqdm(enumerate(senvarnames)):
+            tempf = -np.mean(sentimeseries[obj],axis=0)/np.std(reftimeseries[refvarname],axis=0)
+            ts_dict[obj] = (sentimeseries[obj]-np.mean(sentimeseries[obj],axis=0))/np.std(reftimeseries[refvarname],axis=0)
+            meanstd_dict[obj] = np.broadcast_to(tempf, (sentimeseries[obj].shape[0], sentimeseries[obj].shape[1]))
+        return ts_dict,meanstd_dict
     
     ###################################################################################################################################################
-    # Input/Output
-    ###################################################################################################################################################     
-    def prepare_input(self,norml_ts=None,expname='ncrf36',orig=True,leftstart=None,pushfront=2):
-        if expname=='ctl':
-            if orig is True:
-                dt = np.asarray(norml_ts['heatsum'][0])
-                dtth = np.concatenate((norml_ts['theta'][0],norml_ts['heatsum'][0]),axis=1)
-                dtthuvw = np.concatenate((norml_ts['u'][0],norml_ts['v'][0],norml_ts['w'][0],norml_ts['theta'][0],norml_ts['heatsum'][0]),axis=1)
-                dtthuv = np.concatenate((norml_ts['u'][0],norml_ts['v'][0],norml_ts['theta'][0],norml_ts['heatsum'][0]),axis=1)
-                uv = np.concatenate((norml_ts['u'][0],norml_ts['v'][0]),axis=1)
-                uvw = np.concatenate((norml_ts['u'][0],norml_ts['v'][0],norml_ts['w'][0]),axis=1)
-                dtuv = np.concatenate((norml_ts['u'][0],norml_ts['v'][0],norml_ts['heatsum'][0]),axis=1)
-                dtuvw = np.concatenate((norml_ts['u'][0],norml_ts['v'][0],norml_ts['w'][0],norml_ts['heatsum'][0]),axis=1)
-                dtthuvwqv = np.concatenate((norml_ts['u'][0],norml_ts['v'][0],norml_ts['w'][0],norml_ts['qv'][0],norml_ts['theta'][0],norml_ts['heatsum'][0]),axis=1)
-                output_dict={'dt':dt,'dtth':dtth,'dtthuvw':dtthuvw,'dtthuv':dtthuv,'uv':uv,'uvw':uvw,'dtuv':dtuv,'dtuvw':dtuvw,'dtthuvwqv':dtthuvwqv}
-                return output_dict
+    # Produce Input Dataset
+    ###################################################################################################################################################      
+    def _back_to_exp(self,timeseries=None,divider=None):
+        printout = [timeseries[0:divider[0],:]]
+        for i in range(1,len(divider)-1):
+            printout.append(timeseries[divider[i-1]:divider[i],:])
+        printout.append(timeseries[divider[-2]:,:])
+        return printout
+    
+    def back_to_exp(self,inputlong=None,divider=None,senvarname=None):
+        ts_dict = {}
+        if senvarname is None:
+            for indx,obj in tqdm(enumerate(self.varname)):
+                ts_dict[obj] = self._back_to_exp(inputlong[obj],divider)
         else:
-            if expname=='ncrf_36h':
-                rsindx,expindx = 36,1
-            elif expname=='ncrf_60h':
-                rsindx,expindx = 60,2
-            elif expname=='lwcrf':
-                rsindx,expindx = 36,3
-                        
-            if orig is True:
-                dt = np.asarray(norml_ts['heatsum'][expindx][rsindx-leftstart-pushfront:])
-                dtth = np.concatenate((norml_ts['theta'][expindx][rsindx-leftstart-pushfront:],norml_ts['heatsum'][expindx][rsindx-leftstart-pushfront:]),axis=1)
-                dtthuvw = np.concatenate((norml_ts['u'][expindx][rsindx-leftstart-pushfront:],norml_ts['v'][expindx][rsindx-leftstart-pushfront:],\
-                                          norml_ts['w'][expindx][rsindx-leftstart-pushfront:],norml_ts['theta'][expindx][rsindx-leftstart-pushfront:],\
-                                          norml_ts['heatsum'][expindx][rsindx-leftstart-pushfront:]),axis=1)
-                dtthuv = np.concatenate((norml_ts['u'][expindx][rsindx-leftstart-pushfront:],norml_ts['v'][expindx][rsindx-leftstart-pushfront:],\
-                                         norml_ts['theta'][expindx][rsindx-leftstart-pushfront:],norml_ts['heatsum'][expindx][rsindx-leftstart-pushfront:]),axis=1)
-                uv = np.concatenate((norml_ts['u'][expindx][rsindx-leftstart-pushfront:],norml_ts['v'][expindx][rsindx-leftstart-pushfront:]),axis=1)
-                uvw = np.concatenate((norml_ts['u'][expindx][rsindx-leftstart-pushfront:],norml_ts['v'][expindx][rsindx-leftstart-pushfront:],\
-                                      norml_ts['w'][expindx][rsindx-leftstart-pushfront:]),axis=1)
-                dtuv = np.concatenate((norml_ts['u'][expindx][rsindx-leftstart-pushfront:],norml_ts['v'][expindx][rsindx-leftstart-pushfront:],\
-                                       norml_ts['heatsum'][expindx][rsindx-leftstart-pushfront:]),axis=1)
-                dtuvw = np.concatenate((norml_ts['u'][expindx][rsindx-leftstart-pushfront:],norml_ts['v'][expindx][rsindx-leftstart-pushfront:],\
-                                        norml_ts['w'][expindx][rsindx-leftstart-pushfront:],norml_ts['heatsum'][expindx][rsindx-leftstart-pushfront:]),axis=1)
-                dtthuvwqv = np.concatenate((norml_ts['u'][expindx][rsindx-leftstart-pushfront:],norml_ts['v'][expindx][rsindx-leftstart-pushfront:],\
-                                            norml_ts['w'][expindx][rsindx-leftstart-pushfront:],norml_ts['qv'][expindx][rsindx-leftstart-pushfront:],\
-                                            norml_ts['theta'][expindx][rsindx-leftstart-pushfront:],norml_ts['heatsum'][expindx][rsindx-leftstart-pushfront:]),axis=1)
-                output_dict={'dt':dt,'dtth':dtth,'dtthuvw':dtthuvw,'dtthuv':dtthuv,'uv':uv,'uvw':uvw,'dtuv':dtuv,'dtuvw':dtuvw,'dtthuvwqv':dtthuvwqv}
-                return output_dict
-            
-    def create_input(self,PCAtimeseries=None,expname=None,leftstart=24,pushfront=2):
-        inputpreproc = []
-        for indx,expnameINT in enumerate(expname):
-            inputpreproc.append(self.prepare_input(PCAtimeseries,expnameINT,True,leftstart,pushfront))
-        mlr_inputtype = ['dt','dtth','dtthuvw','dtthuv','uv','uvw','dtuv','dtuvw','dtthuvwqv']
-        mlr_inputdict = {}
-        for TYPE in mlr_inputtype:
-            print(TYPE)
-            result = np.concatenate([exp[TYPE] for exp in inputpreproc],axis=0)
-            mlr_inputdict[TYPE] = result
-        return mlr_inputdict
+            for indx,obj in tqdm(enumerate(senvarname)):
+                ts_dict[obj] = self._back_to_exp(inputlong[obj],divider)            
+        return ts_dict
     
-    def produce_output_LT(self,norml_ts=None,expname=None,leadtime=None,nocomp=None,leftstart=24,pushfront=2,withtheta=True):
-        def output_timediff(LT=None,inputdict=None,exp=None,leftstart=24,pushfront=2):
-            if exp=='ctl':
-                if withtheta is True:
-                    a = np.concatenate([forward_diff(inputdict['u'][0],60*60,0,LT),forward_diff(inputdict['v'][0],60*60,0,LT),\
-                                        forward_diff(inputdict['w'][0],60*60,0,LT),forward_diff(inputdict['theta'][0],60*60,0,LT)],axis=1)
-                    azero = np.zeros((LT,nocomp[0]+nocomp[1]+nocomp[2]+nocomp[4]))
+    def train_valid_test(self,expvarlist=None,validindex=None,testindex=None,concat='Yes'):
+        X_valid, X_test = [expvarlist[i] for i in validindex], [expvarlist[i] for i in testindex]
+        X_traint = expvarlist.copy()
+        popindex = validindex+testindex
+        #[X_train.pop(i) for i in validindex]
+        #[X_train.pop(i) for i in testindex]
+        X_train = [X_traint[i] for i in range(len(X_traint)) if i not in popindex]
+        assert len(X_train)==16, 'wrong train-valid-test separation!'
+        if concat=='Yes':
+            return np.concatenate([X_train[i] for i in range(len(X_train))],axis=0), np.concatenate([X_valid[i] for i in range(len(X_valid))],axis=0), np.concatenate([X_test[i] for i in range(len(X_test))],axis=0)
+        else:
+            return X_train, X_valid, X_test
+    
+    def make_X(self,expvarlist=None,varwant=None,validindex=None,testindex=None,concat='Yes'):
+        trainlist,validlist,testlist = [],[],[]
+        for obj in varwant:
+            test1,test2,test3 = self.train_valid_test(expvarlist[obj],validindex,testindex,'Yes')
+            trainlist.append(test1)
+            validlist.append(test2)
+            testlist.append(test3)
+        return np.concatenate([trainlist[i] for i in range(len(trainlist))],axis=1), np.concatenate([validlist[i] for i in range(len(validlist))],axis=1), np.concatenate([testlist[i] for i in range(len(testlist))],axis=1)
+    
+    def make_X_nosep(self,expvarlist=None,varwant=None):
+        trainlist = []
+        for obj in varwant:
+            test1 = np.concatenate([arrays for arrays in expvarlist[obj]], axis=0)
+            trainlist.append(test1)
+        return np.concatenate([trainlist[i] for i in range(len(trainlist))],axis=1)
+    
+    ###################################################################################################################################################
+    # Produce Output Dataset
+    ###################################################################################################################################################
+    def get_time_diff_terms(self,inputvar=None,LT=None):
+        def _get_time_diff(array=None,timedelta=60*60,LT=None):
+            store = []
+            for exp in array:
+                a = forward_diff(exp,timedelta,0,LT)
+                if a.shape[0]>0:
+                    azero = np.zeros((LT,exp.shape[-1]))
+                    store.append(np.concatenate((a,azero),axis=0))
                 else:
-                    a = np.concatenate([forward_diff(inputdict['u'][0],60*60,0,LT),forward_diff(inputdict['v'][0],60*60,0,LT),forward_diff(inputdict['w'][0],60*60,0,LT)],axis=1)
-                    azero = np.zeros((LT,nocomp[0]+nocomp[1]+nocomp[2]))
-                return np.concatenate((a,azero),axis=0)
-            else:
-                if exp=='ncrf_36h':
-                    rsindx,expindx = 36,1
-                elif exp=='ncrf_60h':
-                    rsindx,expindx = 60,2
-                elif exp=='lwcrf':
-                    rsindx,expindx = 36,3
-                if withtheta is True:
-                    a = np.concatenate([forward_diff(inputdict['u'][expindx][rsindx-leftstart-pushfront:],60*60,0,LT),forward_diff(inputdict['v'][expindx][rsindx-leftstart-pushfront:],60*60,0,LT),\
-                                        forward_diff(inputdict['w'][expindx][rsindx-leftstart-pushfront:],60*60,0,LT),\
-                                        forward_diff(inputdict['theta'][expindx][rsindx-leftstart-pushfront:],60*60,0,LT)],axis=1)
-                    azero = np.zeros((LT,nocomp[0]+nocomp[1]+nocomp[2]+nocomp[4]))
-                else:
-                    a = np.concatenate([forward_diff(inputdict['u'][expindx][rsindx-leftstart-pushfront:],60*60,0,LT),forward_diff(inputdict['v'][expindx][rsindx-leftstart-pushfront:],60*60,0,LT),\
-                                        forward_diff(inputdict['w'][expindx][rsindx-leftstart-pushfront:],60*60,0,LT)],axis=1)
-                    azero = np.zeros((LT,nocomp[0]+nocomp[1]+nocomp[2]))
-                return np.concatenate((a,azero),axis=0)
-        result = []
-        for index,expNAME in enumerate(expname):
-            result.append(output_timediff(LT=leadtime,inputdict=norml_ts,exp=expNAME,leftstart=leftstart,pushfront=pushfront))
-        del index,expNAME
-        result_con = np.concatenate((result),axis=0)
-        return result_con
+                    store.append(np.zeros((exp.shape[0],exp.shape[-1])))
+            return store
+        
+        storedict = {}
+        for wantvar in ['u','v','w','theta']:
+            storedict[wantvar] = _get_time_diff(array=inputvar[wantvar],LT=LT)
+        return storedict
+    
+    def make_Y(self,inputdict=None,LDT=None,validindex=[1,6],testindex=[2,12]):
+        def _make_Y(inputt=None):
+            varTRAIN,varVALID,varTEST = [],[],[]
+            for varobj in ['u','v','w','theta']:
+                test1,test2,test3 = self.train_valid_test(expvarlist=inputt[varobj],validindex=validindex,testindex=testindex,concat='Yes')
+                varTRAIN.append(test1)
+                varVALID.append(test2)
+                varTEST.append(test3)
+            return np.concatenate([varTRAIN[i] for i in range(len(varTRAIN))],axis=1), np.concatenate([varVALID[i] for i in range(len(varVALID))],axis=1), np.concatenate([varTEST[i] for i in range(len(varTEST))],axis=1)
+        test = [self.get_time_diff_terms(inputdict,int(LDTobj)) for LDTobj in LDT]
+        return [_make_Y(timediffobj) for timediffobj in test]
+    
+    def make_Y_nosep(self,inputdict=None,LDT=None):
+        def _make_Y(inputt=None):
+            varTRAIN = []
+            for varobj in ['u','v','w','theta']:
+                test1 = np.concatenate([arrays for arrays in inputt[varobj]], axis=0)
+                varTRAIN.append(test1)
+            return np.concatenate([varTRAIN[i] for i in range(len(varTRAIN))],axis=1)
+        test = [self.get_time_diff_terms(inputdict,int(LDTobj)) for LDTobj in LDT]
+        return [_make_Y(timediffobj) for timediffobj in test]
 
 class datacheck:
-    def __init__(self,folderpath=None,pcapath=None,smooth24=False):
-        self.folderpath=folderpath
-        self.pcadict = read_and_proc.depickle(self.folderpath+pcapath)
-        if smooth24:
-            self.ctlflatvar = [read_and_proc.depickle(self.folderpath+str(['ctl'][i])+'_'+'preproc_dict1') for i in range(len(['ctl']))]
-        else:
-            self.ctlflatvar = [read_and_proc.depickle(self.folderpath+'uvwheat/'+str(['ctl'][i])+'_'+'preproc_dict1') for i in range(len(['ctl']))]
+    def __init__(self,pcadict=None,flatvardict=False,divider=None):
+        #self.folderpath=folderpath
+        self.pcadict = pcadict
+        self.ctlflatvar = flatvardict
+        self.divider = divider
+        
+    def _back_to_exp(self,timeseries=None,divider=None):
+        printout = [timeseries[0:divider[0],:]]
+        for i in range(1,len(divider)-1):
+            printout.append(timeseries[divider[i-1]:divider[i],:])
+        printout.append(timeseries[divider[-2]:,:])
+        return printout
     
-    def dudvdwVAR(self,dudvdwpath=None,vartest='w'):
-        dudvdw = read_and_proc.depickle(self.folderpath+dudvdwpath)
-        TESTu = [np.dot(forward_diff(self.pcadict[vartest].transform(self.ctlflatvar[0][vartest])[:,0:int(i)],60*60,0,1),(self.pcadict[vartest].components_[0:int(i)])) for i in np.linspace(0,60,31)]
-        TESTu_var = [np.var(obj)/np.var(dudvdw['d'+str(vartest)]) for obj in TESTu]
-        del TESTu
+    def dudvdwVAR(self,dudvdw=None,vartest='w'):
+        #dudvdw = read_and_proc.depickle(self.folderpath+dudvdwpath)
+        timeseries = self.pcadict[vartest].transform(self.ctlflatvar[vartest])
+        left_dot = [forward_diff(obj,60*60,0,1) for obj in self._back_to_exp(timeseries,self.divider)]
+        left_dott = np.concatenate([obj for obj in left_dot],axis=0)
+        for i in np.linspace(0,90,46):
+            tempobj = np.dot(left_dott[:,0:int(i)],(self.pcadict[vartest].components_[0:int(i)]))
+            print((np.var(tempobj)/np.var(dudvdw['d'+str(vartest)])))
+        #TESTu_var = [np.var(obj)/np.var(dudvdw['d'+str(vartest)]) for obj in TESTu]
+        del left_dot,left_dott
         gc.collect()
-        return TESTu_var
-    
-    def dthdQVAR(self,dudvdwpath=None,vartest='th',smooth24=False):
-        dudvdw = read_and_proc.depickle(self.folderpath+dudvdwpath)
-        if vartest=='th':
-            vartestPC='theta'
-            if smooth24:
-                TESTu = [np.dot(forward_diff(self.pcadict[vartestPC].transform(self.ctlflatvar[0][vartestPC])[:,0:int(i)],60*60,0,1),(self.pcadict[vartestPC].components_[0:int(i)])) for i in np.linspace(0,60,31)]
-            else:
-                folderpath='/work/FAC/FGSE/IDYST/tbeucler/default/freddy0218/TCGphy/2020_TC_CRF/dev/freddy0218/pca/output/uvwheat/'
-                PCAtheta = read_and_proc.depickle(folderpath+'PCA/theta_PCA_dict1')
-                folderpath='/work/FAC/FGSE/IDYST/tbeucler/default/freddy0218/TCGphy/2020_TC_CRF/dev/freddy0218/pca/output/flatvar/'
-                thetavar = read_and_proc.depickle(folderpath+'theta_'+'preproc_dict1')
-                TESTu = [np.dot(forward_diff(PCAtheta[vartestPC].transform(thetavar['ctlTHETA'])[:,0:int(i)],60*60,0,1),(PCAtheta[vartestPC].components_[0:int(i)])) for i in np.linspace(0,60,31)]
-        elif vartest=='Q':
-            vartestPC = 'heatsum'
-            TESTu = [np.dot(forward_diff(self.pcadict[vartestPC].transform(self.ctlflatvar[0][vartestPC])[:,0:int(i)],60*60,0,1),\
-                            (self.pcadict[vartestPC].components_[0:int(i)])) for i in np.linspace(0,60,31)]
-        TESTu_var = [np.var(obj)/np.var(dudvdw['d'+str(vartest)]) for obj in TESTu]
-        del TESTu
-        gc.collect()
-        return TESTu_var
+        return None
 

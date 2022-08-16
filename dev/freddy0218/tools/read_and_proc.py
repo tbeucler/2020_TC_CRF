@@ -4,29 +4,33 @@ import concurrent.futures
 import json,pickle,marshal
 
 def read_some_azimuth_fields(fileloc=None,fieldname=None):
-		dict_name = {}
-		for inx,obj in enumerate(fileloc):
-				field_read = xr.open_dataset(obj)
-				dict_name[fieldname[inx]] = field_read
-		return dict_name
+    dict_name = {}
+    for inx,obj in enumerate(fileloc):
+        field_read = xr.open_dataset(obj)
+        dict_name[fieldname[inx]] = field_read
+    return dict_name
 
 def add_ctrl_before_senstart(CTRLvar=None,SENvar=None,exp='ncrf_36h',firstdo='Yes'):
-		if firstdo=='Yes':
-				if (exp=='ncrf_36h') or (exp=='lwcrf'):
-						return np.concatenate((CTRLvar[0:36],SENvar))
-				elif exp=='ncrf_60h':
-						return np.concatenate((CTRLvar[0:60],SENvar))
-		else:
-				return SENvar
+    if firstdo=='Yes':
+        if (exp=='ncrf_36h') or (exp=='lwcrf'):
+            return np.concatenate((CTRLvar[0:36],SENvar))
+        elif exp=='ncrf_60h':
+            return np.concatenate((CTRLvar[0:60],SENvar))
+        elif exp=='ncrf_96h':
+            return np.concatenate((CTRLvar[0:96],SENvar))
+        else:
+            return SENvar
             
 def add_ctrl_before_senstart_ctrlbase(CTRLvar=None,SENvar=None,exp='ncrf_36h',firstdo='Yes'):
-		if firstdo=='Yes':
-				if (exp=='ncrf_36h') or (exp=='lwcrf'):
-						return np.concatenate((CTRLvar[0:37],SENvar[1:]))
-				elif exp=='ncrf_60h':
-						return np.concatenate((CTRLvar[0:61],SENvar[1:]))
-		else:
-				return SENvar
+    if firstdo=='Yes':
+        if (exp=='ncrf_36h') or (exp=='lwcrf'):
+            return np.concatenate((CTRLvar[0:37],SENvar[1:]))
+        elif exp=='ncrf_60h':
+            return np.concatenate((CTRLvar[0:61],SENvar[1:]))
+        elif exp=='ncrf_96h':
+            return np.concatenate((CTRLvar[0:97],SENvar[1:]))
+    else:
+        return SENvar
             
 def flatten(t):
     #https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-a-list-of-lists
@@ -35,17 +39,6 @@ def flatten(t):
 #######################################################################################
 # Save files
 #######################################################################################
-class NumpyEncoder(json.JSONEncoder):
-    """ Special json encoder for numpy types """
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return json.JSONEncoder.default(self, obj) 
-
 def save_to_pickle(loc=None,var=None,TYPE='PICKLE'):
     if TYPE=='PICKLE':
         with open(loc,"wb") as f:
@@ -97,7 +90,7 @@ def polar2cartesian(outcoords, inputshape, origin):
     x0, y0 = origin
     x = xindex - x0
     y = yindex - y0
-
+    
     r = np.sqrt(x**2 + y**2)
     theta = np.arctan2(y, x)
     theta_index = np.round((theta + np.pi) * inputshape[1] / (2 * np.pi))
@@ -115,7 +108,22 @@ def proc_tocart(polarfield=None,angle=None,twoD=True,standard=False):
             PWnew = (PWnew-np.nanmean(PWnew))/np.nanstd(PWnew)
         else:
             PWnew=PWnew
+        test_2cartesian = scipy.ndimage.geometric_transform(PWnew,polar2cartesian,order=0,mode='constant',output_shape =(PWnew.shape[0]*2,PWnew.shape[0]*2),\
+                                                            extra_keywords = {'inputshape':PWnew.shape,'origin':(PWnew.shape[0],PWnew.shape[0])})
+        return ((test_2cartesian))
 
+def proc_radial(polarfield=None,angle=None,twoD=True,standard=False):
+    if twoD==True:
+        PWnew = [np.asarray(polarfield)[int(np.abs(angle-360).argmin()),:]]
+        for i in np.linspace(0,358,359):
+            PWnew.append(np.asarray(polarfield)[int(np.abs(angle-i).argmin()),:])
+        PWnew = np.swapaxes(np.asarray(PWnew),0,1)
+        del i
+        return PWnew
+
+def proc_tocartUV(polarfield=None,angle=None,twoD=True,standard=False):
+    if twoD==True:
+        PWnew=polarfield.copy()
         test_2cartesian = scipy.ndimage.geometric_transform(PWnew,polar2cartesian,order=0,mode='constant',output_shape =(PWnew.shape[0]*2,PWnew.shape[0]*2),\
                                                             extra_keywords = {'inputshape':PWnew.shape,'origin':(PWnew.shape[0],PWnew.shape[0])})
         #print('Finish processing')
