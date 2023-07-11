@@ -1,0 +1,4 @@
+/work/FAC/FGSE/IDYST/tbeucler/default/freddy0218/miniconda3/envs/fred_workenv/lib/python3.9/site-packages/sklearn/base.py:329: UserWarning: Trying to unpickle estimator IncrementalPCA from version 1.1.2 when using version 1.0.2. This might lead to breaking code or invalid results. Use at your own risk. For more info please refer to:
+https://scikit-learn.org/stable/modules/model_persistence.html#security-maintainability-limitations
+  warnings.warn(
+slurmstepd: error: *** JOB 28491449 ON dna085 CANCELLED AT 2023-06-01T12:53:05 ***
