@@ -5,6 +5,112 @@ import torch
 from livelossplot import PlotLosses
 from tqdm.auto import tqdm
 
+class OptimMLR_all_3D_lwswu(torch.nn.Module):
+    def __init__(self,num_nonlinear):
+        #super(OptimMLR_all_2D, self).__init__()
+        super(OptimMLR_all_3D_lwswu, self).__init__()
+        ############################################################
+        # Input channels
+        ############################################################
+        brchsize = [50,20,20]
+        self.dense1 = torch.nn.Linear(brchsize[0], 1)
+        self.dense2 = torch.nn.Linear(brchsize[1], 1)
+        self.dense3 = torch.nn.Linear(brchsize[2], 1)
+        ############################################################
+        # Nonlinear layers
+        ############################################################
+        self.nonln = torch.nn.ModuleList([
+            torch.nn.Sequential(torch.nn.Linear(len(brchsize),len(brchsize)),
+                                torch.nn.LeakyReLU()) for i in range(num_nonlinear)])
+
+        #for i in range(num_nonlinear):
+        #    self.nonln.append(torch.nn.Linear(7,7))
+        #    self.nonln.append(torch.nn.LeakyReLU())
+        #self.nonln = torch.nn.
+        ############################################################
+        # Final Dense Layer
+        ############################################################
+        self.denseout = torch.nn.Linear(len(brchsize),96)#106)
+
+    def forward(self,X):
+        brchindex = list(np.asarray([0,50,38,91,8,82,20,20]).cumsum())
+        X_u, X_v, X_w, X_th = X[:,brchindex[0]:brchindex[1]],X[:,brchindex[1]:brchindex[2]],X[:,brchindex[2]:brchindex[3]],X[:,brchindex[3]:brchindex[4]]
+        X_hdia, X_lw, X_sw = X[:,brchindex[4]:brchindex[5]],X[:,brchindex[5]:brchindex[6]],X[:,brchindex[6]:brchindex[7]]
+        ############################################################
+        # Optimal PC layer
+        ############################################################
+        bestu = self.dense1(X_u)
+        bestlw = self.dense2(X_lw)
+        bestsw = self.dense3(X_sw)
+        ############################################################
+        # Concat
+        ############################################################
+        bestPC = torch.cat((bestu,bestlw,bestsw),1)
+        bestPC_proc = bestPC
+        ############################################################
+        # Nonlinear layer
+        ############################################################
+        for nonln in self.nonln:
+            bestPC_proc = nonln(bestPC_proc)
+        ############################################################
+        # Prediction layer
+        ############################################################
+        outpred = self.denseout(bestPC_proc)
+        return outpred
+
+class OptimMLR_all_3D_lwswv(torch.nn.Module):
+    def __init__(self,num_nonlinear):
+        #super(OptimMLR_all_2D, self).__init__()
+        super(OptimMLR_all_3D_lwswv, self).__init__()
+        ############################################################
+        # Input channels
+        ############################################################
+        brchsize = [38,20,20]
+        self.dense1 = torch.nn.Linear(brchsize[0], 1)
+        self.dense2 = torch.nn.Linear(brchsize[1], 1)
+        self.dense3 = torch.nn.Linear(brchsize[2], 1)
+        ############################################################
+        # Nonlinear layers
+        ############################################################
+        self.nonln = torch.nn.ModuleList([
+            torch.nn.Sequential(torch.nn.Linear(len(brchsize),len(brchsize)),
+                                torch.nn.LeakyReLU()) for i in range(num_nonlinear)])
+
+        #for i in range(num_nonlinear):
+        #    self.nonln.append(torch.nn.Linear(7,7))
+        #    self.nonln.append(torch.nn.LeakyReLU())
+        #self.nonln = torch.nn.
+        ############################################################
+        # Final Dense Layer
+        ############################################################
+        self.denseout = torch.nn.Linear(len(brchsize),96)#106)
+
+    def forward(self,X):
+        brchindex = list(np.asarray([0,50,38,91,8,82,20,20]).cumsum())
+        X_u, X_v, X_w, X_th = X[:,brchindex[0]:brchindex[1]],X[:,brchindex[1]:brchindex[2]],X[:,brchindex[2]:brchindex[3]],X[:,brchindex[3]:brchindex[4]]
+        X_hdia, X_lw, X_sw = X[:,brchindex[4]:brchindex[5]],X[:,brchindex[5]:brchindex[6]],X[:,brchindex[6]:brchindex[7]]
+        ############################################################
+        # Optimal PC layer
+        ############################################################
+        bestv = self.dense1(X_v)
+        bestlw = self.dense2(X_lw)
+        bestsw = self.dense3(X_sw)
+        ############################################################
+        # Concat
+        ############################################################
+        bestPC = torch.cat((bestv,bestlw,bestsw),1)
+        bestPC_proc = bestPC
+        ############################################################
+        # Nonlinear layer
+        ############################################################
+        for nonln in self.nonln:
+            bestPC_proc = nonln(bestPC_proc)
+        ############################################################
+        # Prediction layer
+        ############################################################
+        outpred = self.denseout(bestPC_proc)
+        return outpred
+
 class OptimMLR_all_3D_lwswhdia(torch.nn.Module):
     def __init__(self,num_nonlinear):
         #super(OptimMLR_all_2D, self).__init__()
@@ -207,14 +313,14 @@ class EarlyStopping:
         torch.save(model.state_dict(), self.path)
         self.val_loss_min = val_loss
         
-def train_model(optimizer=None,scheduler=None,numepochs=None,early_stopper=None,variance_store=None,lossfunc=None,regularization='None',l1_lambda=0.01):
+def train_model(model=None,optimizer=None,scheduler=None,numepochs=None,early_stopper=None,variance_store=None,lossfunc=None,regularization='None',l1_lambda=0.01,train_loader=None,val_loader=None,test_loader=None):
     # Custom loss: MSE_physicalLoss(eigenvectors,wcomps,variance_store)
     liveloss = PlotLosses()
     schedulerCY,schedulerLS = scheduler[1],scheduler[0]
     train_losses,trainu_losses,trainv_losses,trainw_losses,trainth_losses = [],[],[],[],[]
     val_losses = []
     val_NSEs = []
-    for epoch in tqdm(range(int(num_epochs))):
+    for epoch in (range(int(numepochs))):
         """
         Initialize loss
         """

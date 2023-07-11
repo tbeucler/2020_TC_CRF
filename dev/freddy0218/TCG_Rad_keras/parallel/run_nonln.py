@@ -11,6 +11,7 @@ sys.path.insert(1, '/work/FAC/FGSE/IDYST/tbeucler/default/freddy0218/TCGphy/2020
 from tools import derive_var,read_and_proc
 from tools.mlr import mlr
 from tools.preprocess import do_eof,preproc_maria,preproc_haiyan
+sys.path.insert(2,'../')
 import read_stuff as read
 import nonlinear_models
 from livelossplot import PlotLosses
@@ -20,12 +21,12 @@ from livelossplot import PlotLosses
 └──────────────────────────────────────────────────────────────────────────"""
 path = '/work/FAC/FGSE/IDYST/tbeucler/default/freddy0218/'
 suffix = '_smooth_preproc_dict1b_g'
-a = [read_and_proc.depickle(path+'TCGphy/2020_TC_CRF/dev/freddy0218/testML/output/haiyan/processed/uvwheat/'+'mem'+str(lime)+suffix)['u'].shape for lime in tqdm(range(1,21))]
+#a = [read_and_proc.depickle(path+'TCGphy/2020_TC_CRF/dev/freddy0218/testML/output/haiyan/processed/uvwheat/'+'mem'+str(lime)+suffix)['u'].shape for lime in tqdm(range(1,21))]
 # divide experiments reference
-divider = np.asarray([aobj[0] for aobj in a]).cumsum()
+#divider = np.asarray([aobj[0] for aobj in a]).cumsum()
 
-nonln_num=sys.argv[0]
-timelag=sys.argv[1]
+nonln_num=int(str(sys.argv[1]))
+timelag=int(str(sys.argv[2]))
 """──────────────────────────────────────────────────────────────────────────┐
 │ Loading input and outpus                    
 └──────────────────────────────────────────────────────────────────────────"""
@@ -36,7 +37,7 @@ pcastore = read.train_optimizedMLR(folderpath,folderpath2,'rhorig','rhorig','3D'
 wcomps = [50,38,8]
 upcs,vpcs,thpcs = pcastore['u'].components_[:wcomps[0]],pcastore['v'].components_[:wcomps[1]],pcastore['theta'].components_[:wcomps[2]]
 
-for splitnum in range(0,33):
+for splitnum in range(17,33):
     X_totrain,y_totrain = read.train_optimizedMLR(folderpath,folderpath2).delete_padding(Xtrain[splitnum]['lwswdtthuvw'],yall[splitnum][timelag][0])#yall_orig[splitnum][23][0])
     X_tovalid,y_tovalid = read.train_optimizedMLR(folderpath,folderpath2).delete_padding(Xvalid[splitnum]['lwswdtthuvw'],yall[splitnum][timelag][1])#yall_orig[splitnum][23][1])
     X_totest,y_totest = read.train_optimizedMLR(folderpath,folderpath2).delete_padding(Xtest[splitnum]['lwswdtthuvw'],yall[splitnum][timelag][2])#yall_orig[splitnum][23][2])
@@ -85,7 +86,7 @@ for splitnum in range(0,33):
     for i in range(len(times)):
         models,losses = [],[]
         #model = OptimMLR_all_2D()
-        model = nonlinear_models.OptimMLR_all_3D_lwswhdia(nonln_num)
+        model = nonlinear_models.OptimMLR_all_3D_lwswv(int(nonln_num))
         optimizers = [torch.optim.Adam(model.parameters(), lr=1e-7)]#, optim.AdaBound(model.parameters(),lr=1e-7)] 1e-6
         loss = torch.nn.MSELoss()
         for optimizer in optimizers:
@@ -95,9 +96,9 @@ for splitnum in range(0,33):
             early_stopper = nonlinear_models.EarlyStopping(patience=50, verbose=False, delta=1e-7, path='checkpoint.pt', trace_func=print)#EarlyStopper(patience=8, min_delta=1e-3)
             #variance_store = [varu,varv,varw,varth]
             #variance_store = [varu,varv,varth]
-            model,loss = nonlinear_models.train_model(optimizer=optimizer,scheduler=[scheduler,scheduler2],numepochs=num_epochs,early_stopper=early_stopper,variance_store=None,\
-                                     lossfunc=loss)
+            model,loss = nonlinear_models.train_model(model=model,optimizer=optimizer,scheduler=[scheduler,scheduler2],numepochs=num_epochs,early_stopper=early_stopper,variance_store=None,\
+                                     lossfunc=loss,train_loader=train_loader,val_loader=val_loader,test_loader=test_loader)
             models.append(model)
             losses.append(loss)
-        torch.save(models, './tmp/torch_try/lwswhdia/'+str(nonln_num)+'/'+'models'+str(splitnum)+'_lwsw3dnonln_1115_'+str(times[i])+'.pt')
-        read_and_proc.save_to_pickle('./tmp/torch_try/lwswhdia/'+str(nonln_num)+'/'+'losses'+str(splitnum)+'_lwsw3dnonln_1115_'+str(times[i])+'.pkt',losses,'PICKLE')
+        torch.save(models, '../tmp/torch_try/lwswv/'+str(nonln_num)+'/'+'models'+str(splitnum)+'_lwsw3dnonln_1115_'+str(times[i])+'.pt')
+        read_and_proc.save_to_pickle('../tmp/torch_try/lwswv/'+str(nonln_num)+'/'+'losses'+str(splitnum)+'_lwsw3dnonln_1115_'+str(times[i])+'.pkt',losses,'PICKLE')
